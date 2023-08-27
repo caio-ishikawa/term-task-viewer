@@ -21,8 +21,6 @@ fn start_interactive(state: &mut state_handler::AppState) -> Result<(), Box<dyn 
                 state.display()?;
             }
         } else {
-            // refreshes every 600 milliseconds irrespective of user input
-            // TODO: selectively refresh processes if search term is not empty
             if Instant::now() - last_refreshed >= Duration::from_millis(500)
                 && state.search_term == String::from("")
             {

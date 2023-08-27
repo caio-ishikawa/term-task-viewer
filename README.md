@@ -13,3 +13,18 @@ Design Goals
 - Filter by memory usage and cpu usage, as well as by process name using a reactive UI.
 - Update information in real-time.
 
+Dependencies
+------------
+- [Cargo & Rust](https://www.rust-lang.org/tools/install)
+
+How to use
+----------
+- Navigate the list using regular vim keybinds (h, j, k, l).
+- Press / to enter search/filter mode. Press enter to navigate filtered list or Esc to return.
+- Killing processes works like deleting a line in vim. Press D to select the process for deletion and confirm by pressing D again.
+
+Todo before 0.1.0 
+-------------------
+- Implement filters for memory and CPU (ascending, descending.)
+- Write tests.
+- Write Makefile

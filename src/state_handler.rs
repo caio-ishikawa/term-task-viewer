@@ -1,7 +1,9 @@
 use std::borrow::Cow;
 use std::error::Error;
 use std::io::stdout;
+use std::io::Stdout;
 use std::io::Write;
+use std::process;
 
 use crossterm::style::{Attribute, Color, ResetColor, SetAttribute, SetForegroundColor};
 use crossterm::{cursor, QueueableCommand};
@@ -9,11 +11,6 @@ use psutil::process::Process;
 
 use crate::processes;
 use crate::system::{self, SystemData};
-
-//TODO: Add message_bar field to AppState.
-//TODO: Catch errors and display them on message_bar field.
-//TODO: Print message bar on the bottom of the terminal window
-//
 
 pub enum AppIndexMove {
     Next,
@@ -25,7 +22,6 @@ pub enum AppMode {
     Navigation,
     Deletion,
     Search,
-    //Monitoring
 }
 
 #[derive(Clone)]
@@ -63,8 +59,15 @@ impl AppState {
     pub fn display(&self) -> Result<(), Box<dyn Error>> {
         print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
         let mut stdout = stdout();
-        let mut starting_row = 5;
+        let mut row = 3;
 
+        self.display_system_info(&mut stdout)?;
+        self.display_processes(&mut stdout, &mut row)?;
+        self.display_footer(&mut stdout, &mut row)?;
+        Ok(())
+    }
+
+    fn display_system_info(&self, stdout: &mut Stdout) -> Result<(), Box<dyn Error>> {
         print!(
             "{}{}{}{}{}",
             SetAttribute(Attribute::Underlined),
@@ -112,33 +115,62 @@ impl AppState {
         );
         stdout.queue(cursor::MoveTo(0, 4))?;
 
+        Ok(())
+    }
+
+    fn display_processes(&self, stdout: &mut Stdout, row: &mut u16) -> Result<(), Box<dyn Error>> {
+        stdout.queue(cursor::MoveTo(0, *row))?;
+        print!(
+            "{}{}{}{}{}",
+            SetAttribute(Attribute::Underlined),
+            SetAttribute(Attribute::Bold),
+            SetForegroundColor(Color::Blue),
+            "Tasks                                                ",
+            ResetColor
+        );
+
+        *row += 1;
+        stdout.queue(cursor::MoveTo(0, *row))?;
         print!(
             "{}{}{}",
             SetForegroundColor(Color::Blue),
             SetAttribute(Attribute::Bold),
             "PID"
         );
+
         stdout.queue(cursor::MoveToColumn(7))?;
         print!("NAME");
+
         stdout.queue(cursor::MoveToColumn(30))?;
         print!("MEM %");
+
         stdout.queue(cursor::MoveToColumn(37))?;
         print!("MEM MBs");
+
         stdout.queue(cursor::MoveToColumn(48))?;
         print!("CPU %{}", ResetColor);
-        stdout.queue(cursor::MoveToColumn(48))?;
 
-        for (i, proc) in self.displayed_processes[self.curr_page_index]
-            .iter()
-            .enumerate()
-        {
-            stdout.queue(cursor::MoveToRow(starting_row))?;
-            if i == self.selected_index {
+        stdout.queue(cursor::MoveToColumn(48))?;
+        *row += 1;
+
+        if self.displayed_processes.len() > 0 {
+            for (i, proc) in self.displayed_processes[self.curr_page_index]
+                .iter()
+                .enumerate()
+            {
+                stdout.queue(cursor::MoveToRow(*row))?;
+
+                let mut text_color = Color::Reset;
+                let mut attr = Attribute::Reset;
+                if i == self.selected_index {
+                    text_color = Color::Red;
+                    attr = Attribute::Bold;
+                }
                 stdout.queue(cursor::MoveToColumn(0))?;
                 print!(
                     "{}{}{}",
-                    SetForegroundColor(Color::Red),
-                    SetAttribute(Attribute::Bold),
+                    SetForegroundColor(text_color),
+                    SetAttribute(attr),
                     proc.pid,
                 );
 
@@ -158,35 +190,19 @@ impl AppState {
                 println!("{:.2}%{}", proc.cpu, ResetColor);
 
                 stdout.queue(cursor::MoveToColumn(10))?;
-            } else {
-                stdout.queue(cursor::MoveToColumn(0))?;
-                print!("{}", proc.pid);
-
-                stdout.queue(cursor::MoveToColumn(7))?;
-                print!("{}", proc.name);
-
-                stdout.queue(cursor::MoveToColumn(30))?;
-                print!("{:.2}%", proc.memory_percent);
-
-                stdout.queue(cursor::MoveToColumn(37))?;
-                print!("{:.2}", proc.memory_mbs);
-
-                stdout.queue(cursor::MoveToColumn(42))?;
-                print!(" MBs");
-
-                stdout.queue(cursor::MoveToColumn(48))?;
-                print!("{:.2}%", proc.cpu);
-                std::io::stdout().flush().unwrap();
-
-                stdout.queue(cursor::MoveToColumn(10))?;
+                *row += 1;
             }
-            starting_row += 1;
+        }
+        Ok(())
+    }
+
+    fn display_footer(&self, stdout: &mut Stdout, row: &mut u16) -> Result<(), Box<dyn Error>> {
+        let mut total_pages = 0;
+        if self.displayed_processes.len() > 0 {
+            total_pages = self.displayed_processes.len();
         }
 
-        let total_pages = self.displayed_processes.len() - 1;
-        let y_coord = self.displayed_processes[0].len() as u16 + 5;
-
-        stdout.queue(cursor::MoveTo(0, y_coord))?;
+        stdout.queue(cursor::MoveTo(0, *row))?;
         print!(
             "{}{}{}{}",
             SetAttribute(Attribute::Bold),
@@ -195,7 +211,7 @@ impl AppState {
             ResetColor
         );
 
-        stdout.queue(cursor::MoveTo(49, y_coord))?;
+        stdout.queue(cursor::MoveTo(49, *row))?;
         print!(
             "{}{}{}{}/{}{}{}{}",
             SetForegroundColor(Color::Red),
@@ -219,7 +235,7 @@ impl AppState {
                     print!("{}:/{}", SetAttribute(Attribute::Bold), self.search_term);
                     stdout.queue(cursor::MoveToRow(height))?;
                 }
-                _ => ()
+                _ => (),
             }
         }
         std::io::stdout().flush().unwrap();
@@ -233,8 +249,10 @@ impl AppState {
             processes::filter_processes(Cow::Borrowed(&self.processes), &self.search_term);
         let updated_paginated =
             processes::generate_paginated_process_list(Cow::Borrowed(&filtered_processes));
-        self.processes = filtered_processes;
+
         self.displayed_processes = updated_paginated;
+        self.selected_index = 0;
+        self.curr_page_index = 0;
     }
 
     pub fn handle_backspace(&mut self) {
@@ -244,8 +262,10 @@ impl AppState {
             processes::filter_processes(Cow::Borrowed(&self.processes), &self.search_term);
         let updated_paginated =
             processes::generate_paginated_process_list(Cow::Borrowed(&filtered_processes));
-        self.processes = filtered_processes;
+
         self.displayed_processes = updated_paginated;
+        self.selected_index = 0;
+        self.curr_page_index = 0;
     }
 
     pub fn handle_kill_process(&mut self) {
@@ -268,12 +288,24 @@ impl AppState {
         );
     }
 
+    pub fn escape_navigation_mode(&mut self) {
+        if self.search_term == "".to_owned() {
+            crossterm::terminal::disable_raw_mode().unwrap();
+            process::exit(0);
+        } else {
+            self.search_term = "".to_owned();
+        }
+    }
+
     pub fn handle_unsupported(&mut self) {
         self.message = "Input not supported.".to_owned();
         self.mode = AppMode::Navigation; // sets mode back to default
     }
 
     pub fn move_page_index(&mut self, index_move: AppIndexMove) {
+        if self.displayed_processes.len() == 0 {
+            return;
+        }
         match index_move {
             AppIndexMove::Next => {
                 if self.curr_page_index == self.displayed_processes.len() - 1 {
@@ -281,7 +313,7 @@ impl AppState {
                 } else {
                     self.curr_page_index += 1;
                 }
-            },
+            }
             AppIndexMove::Previous => {
                 if self.curr_page_index == 0 {
                     self.curr_page_index = self.displayed_processes.len() - 1;
@@ -293,14 +325,19 @@ impl AppState {
     }
 
     pub fn move_list_index(&mut self, index_move: AppIndexMove) {
+        if self.displayed_processes.len() == 0 {
+            return;
+        }
+
         match index_move {
             AppIndexMove::Next => {
+                //TODO: list is sometimes empty
                 if self.selected_index == self.displayed_processes[self.curr_page_index].len() {
                     self.selected_index = 0;
                 } else {
                     self.selected_index += 1;
                 }
-            },
+            }
             AppIndexMove::Previous => {
                 if self.selected_index == 0 {
                     self.selected_index = self.displayed_processes[self.curr_page_index].len();
