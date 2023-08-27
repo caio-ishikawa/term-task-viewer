@@ -17,14 +17,21 @@ Dependencies
 ------------
 - [Cargo & Rust](https://www.rust-lang.org/tools/install)
 
+Installation
+------------
+- Clone repository and cd into into it.
+- Run `make build`.
+- Run `make install`.
+- To uninstall, cd into the cloned repository and run `make uninstall`.
+
 How to use
 ----------
 - Navigate the list using regular vim keybinds (h, j, k, l).
 - Press / to enter search/filter mode. Press enter to navigate filtered list or Esc to return.
 - Killing processes works like deleting a line in vim. Press D to select the process for deletion and confirm by pressing D again.
+- Exit the application by pressing Esc.
 
 Todo before 0.1.0 
 -------------------
 - Implement filters for memory and CPU (ascending, descending.)
 - Write tests.
-- Write Makefile
