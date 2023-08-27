@@ -1,13 +1,17 @@
-use crossterm::event::{self, KeyEvent};
-use psutil::process::processes;
+use std::borrow::Cow;
 use std::error::Error;
 use std::panic;
 use std::time::{Duration, Instant};
+
+use crossterm::event::{self, KeyEvent};
+use psutil::process::processes;
+
 mod event_handler;
 mod processes;
 mod state_handler;
+mod system;
 
-fn start_interactive(mut state: &mut state_handler::AppState) -> Result<(), Box<dyn Error>> {
+fn start_interactive(state: &mut state_handler::AppState) -> Result<(), Box<dyn Error>> {
     state.display()?;
     let mut last_refreshed = Instant::now();
     loop {
@@ -18,9 +22,14 @@ fn start_interactive(mut state: &mut state_handler::AppState) -> Result<(), Box<
             }
         } else {
             // refreshes every 600 milliseconds irrespective of user input
-            if Instant::now() - last_refreshed >= Duration::from_millis(500) {
-                let updated_pages = processes::generate_paginated_process_list();
-                state.processes = updated_pages;
+            // TODO: selectively refresh processes if search term is not empty
+            if Instant::now() - last_refreshed >= Duration::from_millis(500)
+                && state.search_term == String::from("")
+            {
+                let processes = processes::generate_process_data()?;
+                let updated_pages =
+                    processes::generate_paginated_process_list(Cow::Borrowed(&processes));
+                state.displayed_processes = updated_pages;
                 state.display()?;
                 last_refreshed = Instant::now();
             }
